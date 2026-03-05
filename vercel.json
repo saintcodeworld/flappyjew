@@ -4,12 +4,32 @@
     {
       "src": "server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "download.png",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "images.jpeg",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "server.js"
+    },
+    {
+      "src": "/download.png",
+      "dest": "download.png"
+    },
+    {
+      "src": "/images.jpeg",
+      "dest": "images.jpeg"
     },
     {
       "src": "/(.*)",
