@@ -11,6 +11,7 @@
     "@pump-fun/pump-sdk": "^1.29.0",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.95.0",
+    "bn.js": "^5.2.1",
     "bs58": "^5.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
