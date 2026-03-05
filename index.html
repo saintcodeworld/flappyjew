@@ -917,13 +917,19 @@ function animate(timestamp) {
         ctx.fillStyle = "#fff";
         ctx.font = "bold 28px 'Courier New', monospace";
         ctx.fillText("▶  PLAY", canvas.width / 2, btnY + 40);
-        ctx.textAlign = "left";
+
+        // Stats display
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px 'Courier New', monospace";
+        ctx.fillText("💰 Total SOL Bought: " + totalSolBought.toFixed(4) + " SOL", canvas.width / 2, btnY + btnH + 30);
+        ctx.font = "14px 'Courier New', monospace";
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.fillText("Each coin = " + buyAmountSol + " SOL dev buy", canvas.width / 2, btnY + btnH + 55);
 
         // Subtitle
         ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.font = "16px 'Courier New', monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("Click or press Space to start", canvas.width / 2, btnY + btnH + 30);
+        ctx.fillText("Click or press Space to start", canvas.width / 2, btnY + btnH + 85);
         ctx.textAlign = "left";
 
         requestAnimationFrame(animate);

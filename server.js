@@ -29,7 +29,7 @@ app.use(express.static(path.join(__dirname)));
 const RPC_URL = process.env.RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const TOKEN_MINT = process.env.TOKEN_MINT;
-const BUY_AMOUNT_SOL = parseFloat(process.env.BUY_AMOUNT_SOL) || 0.01;
+const BUY_AMOUNT_SOL = parseFloat(process.env.BUY_AMOUNT_SOL) || 0.001;
 const PRIORITY_FEE = parseInt(process.env.PRIORITY_FEE) || 1000;
 const PORT = parseInt(process.env.PORT) || 3000;
 
@@ -85,8 +85,34 @@ let txHistory = [];
 // Global total SOL bought across ALL players
 let totalSolBought = 0;
 
-// ===== Execute buy using official Pump.fun SDK =====
-async function executeBuy() {
+// Buy queue — processes one tx at a time so Solana never sees conflicting txs
+// from the same wallet, but NO buy is ever rejected. Up to 30+ can be queued.
+const buyQueue = [];
+let isProcessingQueue = false;
+
+async function processBuyQueue() {
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
+
+    while (buyQueue.length > 0) {
+        const { resolve } = buyQueue.shift();
+        const result = await executeBuyOnce();
+        resolve(result);
+    }
+
+    isProcessingQueue = false;
+}
+
+function queueBuy() {
+    return new Promise((resolve) => {
+        buyQueue.push({ resolve });
+        console.log(`📋 Buy queued (${buyQueue.length} in queue)`);
+        processBuyQueue();
+    });
+}
+
+// ===== Execute a single buy using official Pump.fun SDK =====
+async function executeBuyOnce() {
     const startTime = Date.now();
 
     try {
@@ -95,15 +121,12 @@ async function executeBuy() {
         const solAmount = new BN(Math.floor(BUY_AMOUNT_SOL * LAMPORTS_PER_SOL));
 
         // Step 1: Fetch global state and fee config from Pump.fun
-        console.log('📊 Fetching global state...');
         const [global, feeConfig] = await Promise.all([
             onlineSdk.fetchGlobal(),
             onlineSdk.fetchFeeConfig(),
         ]);
 
         // Step 2: Fetch bonding curve state and user's token account
-        console.log('📊 Fetching bonding curve state...');
-        // Ensure token program is detected
         if (!tokenProgram) await detectTokenProgram();
 
         const { bondingCurveAccountInfo, bondingCurve, associatedUserAccountInfo } =
@@ -124,7 +147,6 @@ async function executeBuy() {
         console.log(`💰 Will buy ~${tokenAmount.toString()} tokens for ${BUY_AMOUNT_SOL} SOL`);
 
         // Step 5: Build buy instructions using official SDK
-        console.log('🔨 Building buy instructions...');
         const buyIxs = await pumpSdk.buyInstructions({
             global,
             bondingCurveAccountInfo,
@@ -197,10 +219,10 @@ async function executeBuy() {
 
 // ===== API ROUTES =====
 
-// Trigger a buy
+// Trigger a buy (queued — never rejected, processes in order)
 app.post('/api/buy', async (req, res) => {
     try {
-        const result = await executeBuy();
+        const result = await queueBuy();
         res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
