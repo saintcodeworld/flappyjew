@@ -84,6 +84,9 @@ detectTokenProgram().catch(e => console.error('⚠️ Token program detection fa
 let isBuying = false;
 let txHistory = [];
 
+// Global total SOL bought across ALL players
+let totalSolBought = 0;
+
 // ===== Execute buy using official Pump.fun SDK =====
 async function executeBuy() {
     if (isBuying) {
@@ -177,6 +180,8 @@ async function executeBuy() {
             message: `Bought with ${BUY_AMOUNT_SOL} SOL`,
         };
 
+        totalSolBought += BUY_AMOUNT_SOL;
+
         txHistory.push({
             ...result,
             timestamp: new Date().toISOString(),
@@ -214,6 +219,14 @@ app.post('/api/buy', async (req, res) => {
 // Get transaction history
 app.get('/api/history', (req, res) => {
     res.json({ transactions: txHistory.slice(-50) });
+});
+
+// Global stats (polled by all clients for synced totals)
+app.get('/api/stats', (req, res) => {
+    res.json({
+        totalSolBought,
+        totalBuys: txHistory.length,
+    });
 });
 
 // Health check

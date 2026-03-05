@@ -55,8 +55,9 @@ let coins = [];
 let frameCount = 0;
 let score = 0;
 let solBought = 0;
-let totalSolBought = parseFloat(localStorage.getItem('totalSolBought')) || 0;
+let totalSolBought = 0;
 let gameOver = false;
+let gameStarted = false;
 
 // Cache cloud positions for performance
 const cloudPositions = [
@@ -69,6 +70,19 @@ const cloudPositions = [
 // Buy notification system
 let buyNotifications = [];
 const buyLog = document.getElementById('buy-log');
+
+// Poll server for global totalSolBought (synced across all players)
+function fetchGlobalStats() {
+    fetch('/api/stats')
+        .then(res => res.json())
+        .then(data => {
+            totalSolBought = data.totalSolBought || 0;
+            updateScore();
+        })
+        .catch(() => {});
+}
+fetchGlobalStats();
+setInterval(fetchGlobalStats, 2000);
 
 function triggerBuy(coinX, coinY) {
     // Add floating notification at coin position
@@ -89,12 +103,13 @@ function triggerBuy(coinX, coinY) {
         .then(data => {
             if (data.success) {
                 if (buyNotifications[notifIndex]) {
-                    buyNotifications[notifIndex].text = '✅ 0.01 SOL BUY';
+                    buyNotifications[notifIndex].text = '✅ 0.001 SOL BUY';
                     buyNotifications[notifIndex].color = '#00ff88';
                     buyNotifications[notifIndex].status = 'success';
                     buyNotifications[notifIndex].alpha = 1.0;
                 }
                 addLogEntry(`✅ Bought | ${data.amount} SOL | ${data.signature.slice(0,8)}...`, false);
+                fetchGlobalStats();
             } else {
                 // Silently ignore if it's a silent error (e.g., transaction already in progress)
                 if (data.silent) {
@@ -173,6 +188,11 @@ window.addEventListener('keydown', (e) => { if (e.code === 'Space') flap(); });
 window.addEventListener('mousedown', flap);
 
 function flap() {
+    if (!gameStarted) {
+        gameStarted = true;
+        plane.velocity = FLAP_STRENGTH;
+        return;
+    }
     if (gameOver) {
         resetGame();
         return;
@@ -190,6 +210,7 @@ function resetGame() {
     spawnAccumulator = 0;
     lastTime = 0;
     gameOver = false;
+    gameStarted = false;
     updateScore();
     requestAnimationFrame(animate);
 }
@@ -866,6 +887,49 @@ function drawPipe(pipe) {
 }
 
 function animate(timestamp) {
+    if (!gameStarted) {
+        // Draw sky background for start screen
+        const startSkyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        startSkyGrad.addColorStop(0, "#87CEEB");
+        startSkyGrad.addColorStop(0.6, "#b8e4f9");
+        startSkyGrad.addColorStop(1, "#e8d5b7");
+        ctx.fillStyle = startSkyGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw the plane hovering
+        plane.y = canvas.height / 2 + Math.sin(Date.now() * 0.003) * 15;
+        drawPlane(plane.x, plane.y);
+
+        // Title
+        ctx.fillStyle = "#0038b8";
+        ctx.font = "bold 50px 'Courier New', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("✡️ Flappy Jew", canvas.width / 2, canvas.height / 2 - 80);
+
+        // Play button
+        const btnW = 240, btnH = 60;
+        const btnX = canvas.width / 2 - btnW / 2;
+        const btnY = canvas.height / 2 + 20;
+        ctx.fillStyle = "#0038b8";
+        ctx.beginPath();
+        ctx.roundRect(btnX, btnY, btnW, btnH, 12);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 28px 'Courier New', monospace";
+        ctx.fillText("▶  PLAY", canvas.width / 2, btnY + 40);
+        ctx.textAlign = "left";
+
+        // Subtitle
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.font = "16px 'Courier New', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Click or press Space to start", canvas.width / 2, btnY + btnH + 30);
+        ctx.textAlign = "left";
+
+        requestAnimationFrame(animate);
+        return;
+    }
+
     if (gameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -985,9 +1049,7 @@ function animate(timestamp) {
             const dy = coinCy - closestY;
             if (dx * dx + dy * dy < coinR * coinR) {
                 coins[i].collected = true;
-                solBought += 0.01;
-                totalSolBought += 0.01;
-                localStorage.setItem('totalSolBought', totalSolBought.toFixed(2));
+                solBought += 0.001;
                 updateScore();
                 triggerBuy(coinCx, coinCy);
             }
