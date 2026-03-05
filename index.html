@@ -71,6 +71,13 @@ const cloudPositions = [
 let buyNotifications = [];
 const buyLog = document.getElementById('buy-log');
 
+// Fetch buy amount from server config
+let buyAmountSol = 0.001; // default fallback
+fetch('/api/health')
+    .then(res => res.json())
+    .then(data => { if (data.buyAmount) buyAmountSol = data.buyAmount; })
+    .catch(() => {});
+
 // Poll server for global totalSolBought (synced across all players)
 function fetchGlobalStats() {
     fetch('/api/stats')
@@ -103,7 +110,7 @@ function triggerBuy(coinX, coinY) {
         .then(data => {
             if (data.success) {
                 if (buyNotifications[notifIndex]) {
-                    buyNotifications[notifIndex].text = '✅ 0.001 SOL BUY';
+                    buyNotifications[notifIndex].text = `✅ ${data.amount} SOL BUY`;
                     buyNotifications[notifIndex].color = '#00ff88';
                     buyNotifications[notifIndex].status = 'success';
                     buyNotifications[notifIndex].alpha = 1.0;
@@ -1042,7 +1049,7 @@ function animate(timestamp) {
             const dy = coinCy - closestY;
             if (dx * dx + dy * dy < coinR * coinR) {
                 coins[i].collected = true;
-                solBought += 0.001;
+                solBought += buyAmountSol;
                 updateScore();
                 triggerBuy(coinCx, coinCy);
             }
