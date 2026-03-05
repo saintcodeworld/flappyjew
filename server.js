@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 const {
     Connection,
     Keypair,
@@ -217,24 +218,64 @@ async function executeBuyOnce() {
     }
 }
 
-// ===== RATE LIMITING =====
+// ===== ANTI-SPAM: RATE LIMITING + ONE-TIME BUY TOKENS =====
 const ipLastBuy = new Map();
 const RATE_LIMIT_MS = 3000; // 1 buy per 3 seconds per IP
 const MAX_QUEUE_SIZE = 10;
+const BUY_SECRET = crypto.randomBytes(32).toString('hex');
+const validTokens = new Map(); // token -> { ip, createdAt }
+const TOKEN_EXPIRY_MS = 15000; // tokens expire after 15 seconds
 
-// Clean up old entries every 60 seconds
+// Clean up old entries every 30 seconds
 setInterval(() => {
     const now = Date.now();
     for (const [ip, time] of ipLastBuy) {
         if (now - time > 60000) ipLastBuy.delete(ip);
     }
-}, 60000);
+    for (const [token, data] of validTokens) {
+        if (now - data.createdAt > TOKEN_EXPIRY_MS) validTokens.delete(token);
+    }
+}, 30000);
 
 // ===== API ROUTES =====
 
-// Trigger a buy (rate-limited per IP, queued)
+// Issue a one-time buy token (client must request this before buying)
+app.post('/api/buy-token', (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    // Rate limit token requests too
+    const lastBuy = ipLastBuy.get(ip);
+    if (lastBuy && Date.now() - lastBuy < RATE_LIMIT_MS) {
+        return res.status(429).json({ success: false, message: 'Too fast.' });
+    }
+
+    const token = crypto.createHmac('sha256', BUY_SECRET)
+        .update(ip + Date.now() + Math.random())
+        .digest('hex');
+
+    validTokens.set(token, { ip, createdAt: Date.now() });
+    res.json({ token });
+});
+
+// Trigger a buy (requires valid one-time token)
 app.post('/api/buy', async (req, res) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const { token } = req.body || {};
+
+    // Token validation
+    if (!token || !validTokens.has(token)) {
+        console.log(`⛔ Invalid/missing buy token from ${ip}`);
+        return res.status(403).json({ success: false, message: 'Invalid buy token.' });
+    }
+
+    const tokenData = validTokens.get(token);
+    validTokens.delete(token); // one-time use
+
+    // Check token isn't expired
+    if (Date.now() - tokenData.createdAt > TOKEN_EXPIRY_MS) {
+        console.log(`⛔ Expired buy token from ${ip}`);
+        return res.status(403).json({ success: false, message: 'Buy token expired.' });
+    }
 
     // Rate limit check
     const lastBuy = ipLastBuy.get(ip);

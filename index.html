@@ -155,8 +155,17 @@ function triggerBuy(coinX, coinY) {
     });
     const notifIndex = buyNotifications.length - 1;
 
-    // Call backend API
-    fetch('/api/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    // Get one-time buy token, then call buy API
+    fetch('/api/buy-token', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(res => res.json())
+        .then(tokenData => {
+            if (!tokenData.token) throw new Error('No buy token received');
+            return fetch('/api/buy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: tokenData.token })
+            });
+        })
         .then(res => res.json())
         .then(data => {
             if (data.success) {
