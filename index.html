@@ -34,13 +34,19 @@ window.addEventListener('resize', () => {
     canvas.height = window.innerHeight;
 });
 
-// Game Constants
+// Game Constants (tuned for 60fps base)
+const TARGET_FPS = 60;
+const TARGET_FRAME_TIME = 1000 / TARGET_FPS;
 const GRAVITY = 0.25;
 const FLAP_STRENGTH = -5.5;
-const SPAWN_RATE = 100; // frames (faster spawning)
+const SPAWN_INTERVAL = 100; // in 60fps-equivalent frames
 const PIPE_WIDTH = 80;
 const PIPE_GAP = 340;
-const PIPE_SPEED = 5; // increased from 3
+const PIPE_SPEED = 5;
+
+// Delta time tracking
+let lastTime = 0;
+let spawnAccumulator = 0;
 
 // Game State
 let plane = { x: 80, y: window.innerHeight / 2, w: 200, h: 62, velocity: 0 };
@@ -181,9 +187,11 @@ function resetGame() {
     score = 0;
     solBought = 0;
     frameCount = 0;
+    spawnAccumulator = 0;
+    lastTime = 0;
     gameOver = false;
     updateScore();
-    animate();
+    requestAnimationFrame(animate);
 }
 
 function updateScore() {
@@ -857,7 +865,7 @@ function drawPipe(pipe) {
     drawDamagedTower(pipe.x, bottomY, canvas.height - bottomY, false);
 }
 
-function animate() {
+function animate(timestamp) {
     if (gameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -868,6 +876,14 @@ function animate() {
         ctx.fillText("Click to Restart", canvas.width/2 - 70, canvas.height/2 + 40);
         return;
     }
+
+    // Delta time: scale everything so game runs same speed on any refresh rate
+    if (!lastTime) lastTime = timestamp;
+    const rawDelta = timestamp - lastTime;
+    lastTime = timestamp;
+    // Clamp delta to avoid huge jumps (e.g. tab was hidden)
+    const cappedDelta = Math.min(rawDelta, 50);
+    const delta = cappedDelta / TARGET_FRAME_TIME; // 1.0 at 60fps
 
     // Sky gradient background
     const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -891,15 +907,17 @@ function animate() {
         ctx.fill();
     }
 
-    // Physics
-    plane.velocity += GRAVITY;
-    plane.y += plane.velocity;
+    // Physics (scaled by delta)
+    plane.velocity += GRAVITY * delta;
+    plane.y += plane.velocity * delta;
 
     // Draw Plane
     drawPlane(plane.x, plane.y);
 
-    // Handle Pipes & Coins
-    if (frameCount % SPAWN_RATE === 0) {
+    // Spawn pipes & coins based on accumulated time, not frame count
+    spawnAccumulator += delta;
+    if (spawnAccumulator >= SPAWN_INTERVAL) {
+        spawnAccumulator -= SPAWN_INTERVAL;
         let topH = Math.random() * (canvas.height - PIPE_GAP - 100) + 50;
         pipes.push({ x: canvas.width, topHeight: topH, passed: false });
         
@@ -927,7 +945,7 @@ function animate() {
     }
 
     for (let i = pipes.length - 1; i >= 0; i--) {
-        pipes[i].x -= PIPE_SPEED;
+        pipes[i].x -= PIPE_SPEED * delta;
         drawPipe(pipes[i]);
 
         // Collision Detection
@@ -951,7 +969,7 @@ function animate() {
 
     // Handle Coins
     for (let i = coins.length - 1; i >= 0; i--) {
-        coins[i].x -= PIPE_SPEED;
+        coins[i].x -= PIPE_SPEED * delta;
         if (!coins[i].collected) {
             drawEpsteinCoin(coins[i]);
             // Coin collection (circle vs rectangle collision)
@@ -985,11 +1003,11 @@ function animate() {
     // Draw buy notifications on top of everything
     drawBuyNotifications();
 
-    frameCount++;
+    frameCount += delta;
     requestAnimationFrame(animate);
 }
 
-animate();
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
