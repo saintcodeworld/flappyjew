@@ -12,14 +12,65 @@
         #buy-log { position: absolute; bottom: 10px; right: 10px; width: 320px; max-height: 180px; overflow-y: auto; font-size: 12px; color: #0f0; background: rgba(0,0,0,0.7); border: 1px solid #0f03; border-radius: 8px; padding: 8px; pointer-events: none; font-family: 'Courier New', monospace; }
         #buy-log .entry { padding: 2px 0; border-bottom: 1px solid rgba(0,255,0,0.1); }
         #buy-log .fail { color: #f55; }
+        #volume-control { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 20px; z-index: 100; }
+        #volume-control label { color: #fff; font-size: 14px; cursor: pointer; user-select: none; }
+        #volume-slider { -webkit-appearance: none; appearance: none; width: 100px; height: 6px; border-radius: 3px; background: #555; outline: none; cursor: pointer; }
+        #volume-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; cursor: pointer; }
+        #volume-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; cursor: pointer; border: none; }
+        #volume-pct { color: #fff; font-size: 12px; min-width: 30px; text-align: center; }
     </style>
 </head>
 <body>
     <div id="ui">Score: 0</div>
     <div id="buy-log"></div>
+    <div id="volume-control">
+        <label id="vol-icon">🔊</label>
+        <input type="range" id="volume-slider" min="0" max="100" value="50">
+        <span id="volume-pct">50%</span>
+    </div>
+    <audio id="bg-music" src="jewish song.mp3" loop preload="auto"></audio>
     <canvas id="gameCanvas"></canvas>
 
 <script>
+// Background music setup
+const bgMusic = document.getElementById('bg-music');
+const volumeSlider = document.getElementById('volume-slider');
+const volumePct = document.getElementById('volume-pct');
+const volIcon = document.getElementById('vol-icon');
+bgMusic.volume = 0.5;
+
+volumeSlider.addEventListener('input', (e) => {
+    const vol = parseInt(e.target.value);
+    bgMusic.volume = vol / 100;
+    volumePct.textContent = vol + '%';
+    volIcon.textContent = vol === 0 ? '🔇' : vol < 30 ? '🔈' : vol < 70 ? '🔉' : '🔊';
+});
+
+volIcon.addEventListener('click', () => {
+    if (bgMusic.volume > 0) {
+        volIcon.dataset.prevVol = volumeSlider.value;
+        volumeSlider.value = 0;
+        bgMusic.volume = 0;
+        volumePct.textContent = '0%';
+        volIcon.textContent = '🔇';
+    } else {
+        const prev = volIcon.dataset.prevVol || 50;
+        volumeSlider.value = prev;
+        bgMusic.volume = prev / 100;
+        volumePct.textContent = prev + '%';
+        volIcon.textContent = prev < 30 ? '🔈' : prev < 70 ? '🔉' : '🔊';
+    }
+});
+
+// Start music on first user interaction (browser autoplay policy)
+function startMusic() {
+    bgMusic.play().catch(() => {});
+    document.removeEventListener('click', startMusic);
+    document.removeEventListener('keydown', startMusic);
+}
+document.addEventListener('click', startMusic);
+document.addEventListener('keydown', startMusic);
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreElement = document.getElementById('ui');
@@ -185,7 +236,7 @@ planeImg.src = 'download.png';
 
 // Input Handling
 window.addEventListener('keydown', (e) => { if (e.code === 'Space') flap(); });
-window.addEventListener('mousedown', flap);
+window.addEventListener('mousedown', (e) => { if (!e.target.closest('#volume-control')) flap(); });
 
 function flap() {
     if (!gameStarted) {
