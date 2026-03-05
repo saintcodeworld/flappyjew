@@ -80,8 +80,6 @@ async function detectTokenProgram() {
 }
 detectTokenProgram().catch(e => console.error('⚠️ Token program detection failed:', e.message));
 
-// Track pending transactions to avoid double-buys
-let isBuying = false;
 let txHistory = [];
 
 // Global total SOL bought across ALL players
@@ -89,11 +87,6 @@ let totalSolBought = 0;
 
 // ===== Execute buy using official Pump.fun SDK =====
 async function executeBuy() {
-    if (isBuying) {
-        return { success: false, message: '', silent: true };
-    }
-
-    isBuying = true;
     const startTime = Date.now();
 
     try {
@@ -199,8 +192,6 @@ async function executeBuy() {
             message: error.message,
             elapsed: Date.now() - startTime,
         };
-    } finally {
-        isBuying = false;
     }
 }
 

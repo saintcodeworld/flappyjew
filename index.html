@@ -111,13 +111,6 @@ function triggerBuy(coinX, coinY) {
                 addLogEntry(`✅ Bought | ${data.amount} SOL | ${data.signature.slice(0,8)}...`, false);
                 fetchGlobalStats();
             } else {
-                // Silently ignore if it's a silent error (e.g., transaction already in progress)
-                if (data.silent) {
-                    if (buyNotifications[notifIndex]) {
-                        buyNotifications[notifIndex].alpha = 0;
-                    }
-                    return;
-                }
                 if (buyNotifications[notifIndex]) {
                     buyNotifications[notifIndex].text = '❌ FAILED';
                     buyNotifications[notifIndex].color = '#ff4444';
