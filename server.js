@@ -217,10 +217,41 @@ async function executeBuyOnce() {
     }
 }
 
+// ===== RATE LIMITING =====
+const ipLastBuy = new Map();
+const RATE_LIMIT_MS = 3000; // 1 buy per 3 seconds per IP
+const MAX_QUEUE_SIZE = 10;
+
+// Clean up old entries every 60 seconds
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, time] of ipLastBuy) {
+        if (now - time > 60000) ipLastBuy.delete(ip);
+    }
+}, 60000);
+
 // ===== API ROUTES =====
 
-// Trigger a buy (queued — never rejected, processes in order)
+// Trigger a buy (rate-limited per IP, queued)
 app.post('/api/buy', async (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    // Rate limit check
+    const lastBuy = ipLastBuy.get(ip);
+    if (lastBuy && Date.now() - lastBuy < RATE_LIMIT_MS) {
+        const wait = Math.ceil((RATE_LIMIT_MS - (Date.now() - lastBuy)) / 1000);
+        console.log(`⛔ Rate limited: ${ip} (wait ${wait}s)`);
+        return res.status(429).json({ success: false, message: `Rate limited. Wait ${wait}s.` });
+    }
+
+    // Queue cap check
+    if (buyQueue.length >= MAX_QUEUE_SIZE) {
+        console.log(`⛔ Queue full (${buyQueue.length}/${MAX_QUEUE_SIZE})`);
+        return res.status(429).json({ success: false, message: 'Server busy. Try again shortly.' });
+    }
+
+    ipLastBuy.set(ip, Date.now());
+
     try {
         const result = await queueBuy();
         res.json(result);
