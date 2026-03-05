@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✡️Flappy Jew</title>
+    <link rel="icon" type="image/jpeg" href="images.jpeg">
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; width: 100vw; height: 100vh; }
+        canvas { display: block; background: #fff; }
+        #ui { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: bold; color: #333; pointer-events: none; }
+        #buy-log { position: absolute; bottom: 10px; right: 10px; width: 320px; max-height: 180px; overflow-y: auto; font-size: 12px; color: #0f0; background: rgba(0,0,0,0.7); border: 1px solid #0f03; border-radius: 8px; padding: 8px; pointer-events: none; font-family: 'Courier New', monospace; }
+        #buy-log .entry { padding: 2px 0; border-bottom: 1px solid rgba(0,255,0,0.1); }
+        #buy-log .fail { color: #f55; }
+    </style>
+</head>
+<body>
+    <div id="ui">Score: 0</div>
+    <div id="buy-log"></div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('ui');
+
+// Set Canvas Size to Full Screen
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// Resize handler
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+
+// Game Constants
+const GRAVITY = 0.25;
+const FLAP_STRENGTH = -5.5;
+const SPAWN_RATE = 100; // frames (faster spawning)
+const PIPE_WIDTH = 80;
+const PIPE_GAP = 340;
+const PIPE_SPEED = 5; // increased from 3
+
+// Game State
+let plane = { x: 80, y: window.innerHeight / 2, w: 200, h: 62, velocity: 0 };
+let pipes = [];
+let coins = [];
+let frameCount = 0;
+let score = 0;
+let solBought = 0;
+let totalSolBought = parseFloat(localStorage.getItem('totalSolBought')) || 0;
+let gameOver = false;
+
+// Cache cloud positions for performance
+const cloudPositions = [
+    { offsetX: 0, y: 50 },
+    { offsetX: 250, y: 90 },
+    { offsetX: 500, y: 130 },
+    { offsetX: 750, y: 170 }
+];
+
+// Buy notification system
+let buyNotifications = [];
+const buyLog = document.getElementById('buy-log');
+
+function triggerBuy(coinX, coinY) {
+    // Add floating notification at coin position
+    buyNotifications.push({
+        x: coinX,
+        y: coinY,
+        alpha: 1.0,
+        text: 'BUYING...',
+        color: '#ffd700',
+        offsetY: 0,
+        status: 'pending'
+    });
+    const notifIndex = buyNotifications.length - 1;
+
+    // Call backend API
+    fetch('/api/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                if (buyNotifications[notifIndex]) {
+                    buyNotifications[notifIndex].text = '✅ 0.01 SOL BUY';
+                    buyNotifications[notifIndex].color = '#00ff88';
+                    buyNotifications[notifIndex].status = 'success';
+                    buyNotifications[notifIndex].alpha = 1.0;
+                }
+                addLogEntry(`✅ Bought | ${data.amount} SOL | ${data.signature.slice(0,8)}...`, false);
+            } else {
+                // Silently ignore if it's a silent error (e.g., transaction already in progress)
+                if (data.silent) {
+                    if (buyNotifications[notifIndex]) {
+                        buyNotifications[notifIndex].alpha = 0;
+                    }
+                    return;
+                }
+                if (buyNotifications[notifIndex]) {
+                    buyNotifications[notifIndex].text = '❌ FAILED';
+                    buyNotifications[notifIndex].color = '#ff4444';
+                    buyNotifications[notifIndex].status = 'fail';
+                    buyNotifications[notifIndex].alpha = 1.0;
+                }
+                addLogEntry(`❌ Failed: ${data.message}`, true);
+            }
+        })
+        .catch(err => {
+            if (buyNotifications[notifIndex]) {
+                buyNotifications[notifIndex].text = '❌ ERROR';
+                buyNotifications[notifIndex].color = '#ff4444';
+                buyNotifications[notifIndex].status = 'fail';
+                buyNotifications[notifIndex].alpha = 1.0;
+            }
+            addLogEntry(`❌ Error: ${err.message}`, true);
+        });
+}
+
+function addLogEntry(text, isFail) {
+    const entry = document.createElement('div');
+    entry.className = 'entry' + (isFail ? ' fail' : '');
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    buyLog.appendChild(entry);
+    buyLog.scrollTop = buyLog.scrollHeight;
+    // Keep max 20 entries
+    while (buyLog.children.length > 20) buyLog.removeChild(buyLog.firstChild);
+}
+
+function drawBuyNotifications() {
+    for (let i = buyNotifications.length - 1; i >= 0; i--) {
+        const n = buyNotifications[i];
+        n.offsetY -= 1.2;
+        n.alpha -= 0.008;
+        if (n.alpha <= 0) {
+            buyNotifications.splice(i, 1);
+            continue;
+        }
+        ctx.save();
+        ctx.globalAlpha = n.alpha;
+        ctx.font = 'bold 16px Courier New';
+        ctx.textAlign = 'center';
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillText(n.text, n.x + 1, n.y + n.offsetY + 1);
+        // Text
+        ctx.fillStyle = n.color;
+        ctx.fillText(n.text, n.x, n.y + n.offsetY);
+        // Glow effect for success
+        if (n.status === 'success' && n.alpha > 0.5) {
+            ctx.shadowColor = '#00ff88';
+            ctx.shadowBlur = 15;
+            ctx.fillText(n.text, n.x, n.y + n.offsetY);
+        }
+        ctx.restore();
+    }
+}
+
+// Preload images
+const coinImg = new Image();
+coinImg.src = 'images.jpeg';
+const planeImg = new Image();
+planeImg.src = 'download.png';
+
+// Input Handling
+window.addEventListener('keydown', (e) => { if (e.code === 'Space') flap(); });
+window.addEventListener('mousedown', flap);
+
+function flap() {
+    if (gameOver) {
+        resetGame();
+        return;
+    }
+    plane.velocity = FLAP_STRENGTH;
+}
+
+function resetGame() {
+    plane = { x: 80, y: canvas.height / 2, w: 200, h: 62, velocity: 0 };
+    pipes = [];
+    coins = [];
+    score = 0;
+    solBought = 0;
+    frameCount = 0;
+    gameOver = false;
+    updateScore();
+    animate();
+}
+
+function updateScore() {
+    scoreElement.innerHTML = "Score: " + score + " &nbsp; 💰 Session: " + solBought.toFixed(2) + " SOL &nbsp; 📊 Total: " + totalSolBought.toFixed(2) + " SOL";
+}
+
+function drawPlane(x, y) {
+    ctx.save();
+    const W = 200, H = 62;
+    const cx = x + W / 2, cy = y + H / 2;
+    // Tilt plane based on velocity (Flappy Bird style)
+    const tilt = Math.max(-0.5, Math.min(0.9, plane.velocity * 0.08));
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt);
+    ctx.translate(-cx, -cy);
+
+    // Draw airplane image if loaded
+    if (planeImg.complete && planeImg.naturalWidth > 0) {
+        ctx.drawImage(planeImg, x, y, W, H);
+    } else {
+        // Fallback: simple rectangle if image not loaded
+        ctx.fillStyle = "#e0e0e0";
+        ctx.fillRect(x, y, W, H);
+    }
+
+    ctx.restore();
+}
+
+function drawStarOfDavid_UNUSED(cx, cy, size) {
+    // === OLD WINGS CODE (removed, using image now) ===
+    const wingGrad = ctx.createLinearGradient(x + 55, y - 22, x + 55, y + H + 26);
+    wingGrad.addColorStop(0, "#e8e8e8");
+    wingGrad.addColorStop(0.3, "#f5f5f5");
+    wingGrad.addColorStop(0.5, "#ffffff");
+    wingGrad.addColorStop(0.7, "#f0f0f0");
+    wingGrad.addColorStop(1, "#d8d8d8");
+    ctx.fillStyle = wingGrad;
+    ctx.strokeStyle = "#7a7a7a";
+    ctx.lineWidth = 0.8;
+    
+    // Top wing with realistic shape
+    ctx.beginPath();
+    ctx.moveTo(x + 75, y + 18);
+    ctx.lineTo(x + 55, y - 22);
+    ctx.lineTo(x + 120, y - 16);
+    ctx.lineTo(x + 130, y + 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    // Wing panel lines
+    ctx.strokeStyle = "rgba(100,100,100,0.2)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x + 65, y + 18);
+    ctx.lineTo(x + 60, y - 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 95, y + 18);
+    ctx.lineTo(x + 85, y - 14);
+    ctx.stroke();
+    
+    // Bottom wing
+    ctx.fillStyle = wingGrad;
+    ctx.strokeStyle = "#7a7a7a";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x + 75, y + H - 14);
+    ctx.lineTo(x + 55, y + H + 26);
+    ctx.lineTo(x + 120, y + H + 20);
+    ctx.lineTo(x + 130, y + H - 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // === 4 ENGINES (photorealistic) ===
+    function drawEngine(ex, ey, angle) {
+        ctx.save();
+        // Pylon with gradient
+        const pylonGrad = ctx.createLinearGradient(ex, ey, ex + 5, ey + (angle > 0 ? -8 : 8));
+        pylonGrad.addColorStop(0, "#c0c0c0");
+        pylonGrad.addColorStop(1, "#909090");
+        ctx.fillStyle = pylonGrad;
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex + 5, ey + (angle > 0 ? -8 : 8));
+        ctx.lineTo(ex + 8, ey + (angle > 0 ? -8 : 8));
+        ctx.lineTo(ex + 3, ey);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Nacelle with metallic gradient
+        const nacelleGrad = ctx.createRadialGradient(ex + 2, ey - 2, 2, ex + 2, ey, 12);
+        nacelleGrad.addColorStop(0, "#d0d0d0");
+        nacelleGrad.addColorStop(0.5, "#b0b0b0");
+        nacelleGrad.addColorStop(1, "#808080");
+        ctx.fillStyle = nacelleGrad;
+        ctx.beginPath();
+        ctx.ellipse(ex + 2, ey, 12, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Nacelle highlight
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.beginPath();
+        ctx.ellipse(ex + 4, ey - 1.5, 8, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Intake ring (darker)
+        ctx.fillStyle = "#2a2a2a";
+        ctx.beginPath();
+        ctx.ellipse(ex + 13, ey, 3, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#1a1a1a";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Exhaust with heat distortion
+        const exhaustGrad = ctx.createRadialGradient(ex - 10, ey, 0, ex - 10, ey, 8);
+        exhaustGrad.addColorStop(0, "rgba(255,180,80,0.5)");
+        exhaustGrad.addColorStop(0.5, "rgba(255,140,40,0.3)");
+        exhaustGrad.addColorStop(1, "rgba(200,100,20,0)");
+        ctx.fillStyle = exhaustGrad;
+        ctx.beginPath();
+        ctx.ellipse(ex - 10, ey, 8, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+    }
+    // Inner engines
+    drawEngine(x + 80, y - 8, -1);
+    drawEngine(x + 80, y + H + 12, 1);
+    // Outer engines
+    drawEngine(x + 65, y - 18, -1);
+    drawEngine(x + 65, y + H + 22, 1);
+
+    // === MAIN FUSELAGE with metallic gradient ===
+    const fuselageGrad = ctx.createLinearGradient(x + 100, y, x + 100, y + H);
+    fuselageGrad.addColorStop(0, "#e0e0e0");
+    fuselageGrad.addColorStop(0.15, "#f8f8f8");
+    fuselageGrad.addColorStop(0.35, "#ffffff");
+    fuselageGrad.addColorStop(0.5, "#fafafa");
+    fuselageGrad.addColorStop(0.65, "#f0f0f0");
+    fuselageGrad.addColorStop(1, "#d8d8d8");
+    ctx.fillStyle = fuselageGrad;
+    ctx.strokeStyle = "#6a6a6a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // Nose cone (pointy Boeing style)
+    ctx.moveTo(x + 195, y + H/2);
+    ctx.quadraticCurveTo(x + 200, y + H/2 - 5, x + 196, y + H/2 - 10);
+    ctx.quadraticCurveTo(x + 190, y + 8, x + 170, y + 6);
+    // Upper deck hump (747 characteristic)
+    ctx.quadraticCurveTo(x + 150, y + 2, x + 130, y + 2);
+    ctx.quadraticCurveTo(x + 100, y + 2, x + 80, y + 6);
+    // Roof to tail
+    ctx.lineTo(x + 20, y + 8);
+    ctx.quadraticCurveTo(x + 5, y + 10, x + 3, y + 15);
+    // Tail rear
+    ctx.lineTo(x + 2, y + H - 12);
+    ctx.quadraticCurveTo(x + 3, y + H - 6, x + 20, y + H - 4);
+    // Belly
+    ctx.lineTo(x + 170, y + H - 4);
+    ctx.quadraticCurveTo(x + 190, y + H - 6, x + 196, y + H/2 + 10);
+    ctx.quadraticCurveTo(x + 200, y + H/2 + 5, x + 195, y + H/2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Specular highlight on top of fuselage
+    const highlightGrad = ctx.createLinearGradient(x + 100, y + 8, x + 100, y + 20);
+    highlightGrad.addColorStop(0, "rgba(255,255,255,0.4)");
+    highlightGrad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = highlightGrad;
+    ctx.beginPath();
+    ctx.moveTo(x + 170, y + 6);
+    ctx.quadraticCurveTo(x + 150, y + 2, x + 130, y + 2);
+    ctx.quadraticCurveTo(x + 100, y + 2, x + 80, y + 6);
+    ctx.lineTo(x + 80, y + 16);
+    ctx.lineTo(x + 170, y + 16);
+    ctx.closePath();
+    ctx.fill();
+
+    // Upper deck hump (slightly darker to show the 747 hump)
+    ctx.fillStyle = "#e5e5e5";
+    ctx.beginPath();
+    ctx.moveTo(x + 170, y + 6);
+    ctx.quadraticCurveTo(x + 150, y + 2, x + 130, y + 2);
+    ctx.quadraticCurveTo(x + 100, y + 2, x + 80, y + 6);
+    ctx.lineTo(x + 80, y + 14);
+    ctx.lineTo(x + 170, y + 14);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Panel lines and rivets for realism
+    ctx.strokeStyle = "rgba(80,80,80,0.15)";
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 10; i++) {
+        const px = x + 30 + i * 15;
+        ctx.beginPath();
+        ctx.moveTo(px, y + 10);
+        ctx.lineTo(px, y + H - 8);
+        ctx.stroke();
+    }
+
+    // Israeli blue stripe (top)
+    ctx.fillStyle = "#0038b8";
+    ctx.fillRect(x + 8, y + 12, 185, 3);
+
+    // Israeli blue stripe (bottom)
+    ctx.fillStyle = "#0038b8";
+    ctx.fillRect(x + 8, y + H - 11, 185, 3);
+
+    // Cockpit windows (multi-pane Boeing style)
+    ctx.fillStyle = "#5ab4d6";
+    ctx.strokeStyle = "#2a6f8f";
+    ctx.lineWidth = 0.8;
+    // Main windshield panels
+    ctx.beginPath();
+    ctx.moveTo(x + 185, y + 14);
+    ctx.lineTo(x + 194, y + 18);
+    ctx.lineTo(x + 194, y + 24);
+    ctx.lineTo(x + 183, y + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 183, y + 22);
+    ctx.lineTo(x + 194, y + 24);
+    ctx.lineTo(x + 195, y + H/2);
+    ctx.lineTo(x + 183, y + 26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Upper deck windows (747 hump)
+    ctx.fillStyle = "#a8d8ea";
+    for (let i = 0; i < 6; i++) {
+        ctx.beginPath();
+        ctx.roundRect(x + 105 + i * 11, y + 5, 6, 4, 1.5);
+        ctx.fill();
+        ctx.strokeStyle = "#7ab";
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+    }
+
+    // Main deck passenger windows (many small windows, Boeing style)
+    ctx.fillStyle = "#a8d8ea";
+    for (let i = 0; i < 16; i++) {
+        ctx.beginPath();
+        ctx.roundRect(x + 25 + i * 10, y + 18, 5, 5, 2);
+        ctx.fill();
+        ctx.strokeStyle = "#7ab";
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+    }
+
+    // Lower deck windows (cargo area has none, but add subtle panel lines)
+    ctx.strokeStyle = "rgba(0,0,0,0.05)";
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(x + 30 + i * 20, y + H - 10);
+        ctx.lineTo(x + 30 + i * 20, y + H - 4);
+        ctx.stroke();
+    }
+
+    // Door outlines
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 170, y + 10, 6, 20);
+    ctx.strokeRect(x + 25, y + 10, 5, 18);
+
+    // Tail Fin (vertical stabilizer - tall Boeing 747 style)
+    ctx.fillStyle = "#f0f0f0";
+    ctx.strokeStyle = "#888";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x + 18, y + 12);
+    ctx.lineTo(x - 8, y - 28);
+    ctx.lineTo(x + 12, y - 26);
+    ctx.lineTo(x + 35, y + 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Tail fin blue area (Israeli flag style)
+    ctx.fillStyle = "#0038b8";
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 2);
+    ctx.lineTo(x - 4, y - 20);
+    ctx.lineTo(x + 8, y - 18);
+    ctx.lineTo(x + 20, y + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Star of David on tail
+    drawStarOfDavid(x + 6, y - 8, 6);
+
+    // Horizontal stabilizers (tail)
+    ctx.fillStyle = "#ddd";
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 15);
+    ctx.lineTo(x - 5, y + 5);
+    ctx.lineTo(x + 20, y + 8);
+    ctx.lineTo(x + 22, y + 15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + H - 10);
+    ctx.lineTo(x - 5, y + H + 2);
+    ctx.lineTo(x + 20, y + H - 2);
+    ctx.lineTo(x + 22, y + H - 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // EL AL text on fuselage
+    ctx.fillStyle = "#0038b8";
+    ctx.font = "bold 10px Arial";
+    ctx.fillText("EL AL", x + 42, y + H/2 + 2);
+
+    // Star of David on fuselage (large)
+    drawStarOfDavid(x + 155, y + H/2, 8);
+
+    // Israeli flag near tail
+    drawStarOfDavid(x + 30, y + H/2, 5);
+
+    ctx.restore();
+}
+
+function drawStarOfDavid(cx, cy, size) {
+    ctx.fillStyle = "#0038b8";
+    ctx.strokeStyle = "#0038b8";
+    ctx.lineWidth = 1;
+    // Triangle pointing up
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx - size * 0.87, cy + size * 0.5);
+    ctx.lineTo(cx + size * 0.87, cy + size * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    // Triangle pointing down
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + size);
+    ctx.lineTo(cx - size * 0.87, cy - size * 0.5);
+    ctx.lineTo(cx + size * 0.87, cy - size * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    // White center hexagon to create outline look
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const px = cx + size * 0.5 * Math.cos(angle);
+        const py = cy + size * 0.5 * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+}
+
+function drawDamagedTower(x, yStart, height, fromTop) {
+    const w = PIPE_WIDTH;
+    const y = fromTop ? yStart : yStart;
+    const h = height;
+    const damageZone = fromTop ? y + h - 80 : y + 40;
+
+    // Tower base with 3D effect
+    const baseGrad = ctx.createLinearGradient(x, y, x + w, y);
+    baseGrad.addColorStop(0, "#7a7a7a");
+    baseGrad.addColorStop(0.2, "#a0a0a0");
+    baseGrad.addColorStop(0.5, "#c0c0c0");
+    baseGrad.addColorStop(0.8, "#a0a0a0");
+    baseGrad.addColorStop(1, "#707070");
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(x, y, w, h);
+
+    // Add depth with side panels
+    ctx.fillStyle = "#5a5a5a";
+    ctx.fillRect(x, y, 3, h);
+    ctx.fillStyle = "#8a8a8a";
+    ctx.fillRect(x + w - 3, y, 3, h);
+
+    // Vertical steel columns (modern tower structure)
+    ctx.strokeStyle = "#4a4a4a";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+        const lx = x + (w / 5) * i;
+        ctx.beginPath();
+        ctx.moveTo(lx, y);
+        ctx.lineTo(lx, y + h);
+        ctx.stroke();
+    }
+
+    // Horizontal floor lines
+    ctx.strokeStyle = "#5a5a5a";
+    ctx.lineWidth = 1.5;
+    const floorHeight = 20;
+    for (let fy = y + floorHeight; fy < y + h; fy += floorHeight) {
+        ctx.beginPath();
+        ctx.moveTo(x, fy);
+        ctx.lineTo(x + w, fy);
+        ctx.stroke();
+    }
+
+    // Windows grid with more detail
+    const winW = 6, winH = 10, winGapX = 5, winGapY = 6;
+    const cols = Math.floor((w - 10) / (winW + winGapX));
+    const startX = x + (w - cols * (winW + winGapX) + winGapX) / 2;
+    const rowStart = fromTop ? y + 10 : y + 50;
+    const rowEnd = fromTop ? y + h - 50 : y + h - 10;
+    
+    for (let wy = rowStart; wy < rowEnd; wy += winH + winGapY) {
+        for (let c = 0; c < cols; c++) {
+            const wx = startX + c * (winW + winGapX);
+            const distToDamage = Math.abs(wy - damageZone);
+            const isDamaged = distToDamage < 70 && Math.random() > 0.6;
+            
+            if (isDamaged) {
+                // Burning/broken windows with animated fire
+                const flicker = Math.sin(frameCount * 0.1 + c + wy) * 0.3 + 0.7;
+                const fireIntensity = Math.max(0, 1 - distToDamage / 70);
+                ctx.fillStyle = `rgba(255,${100 + Math.floor(flicker * 80)},0,${0.7 * fireIntensity * flicker})`;
+                ctx.fillRect(wx - 1, wy - 1, winW + 2, winH + 2);
+                
+                // Inner bright core
+                ctx.fillStyle = `rgba(255,220,100,${0.5 * fireIntensity * flicker})`;
+                ctx.fillRect(wx + 1, wy + 2, winW - 2, winH - 4);
+            } else {
+                // Normal windows with reflection
+                const windowGrad = ctx.createLinearGradient(wx, wy, wx + winW, wy + winH);
+                if (distToDamage < 120) {
+                    windowGrad.addColorStop(0, "#2a2a2a");
+                    windowGrad.addColorStop(0.5, "#1a1a1a");
+                    windowGrad.addColorStop(1, "#0a0a0a");
+                } else {
+                    windowGrad.addColorStop(0, "#3a5a7a");
+                    windowGrad.addColorStop(0.5, "#2a4a6a");
+                    windowGrad.addColorStop(1, "#1a3a5a");
+                }
+                ctx.fillStyle = windowGrad;
+                ctx.fillRect(wx, wy, winW, winH);
+                
+                // Window frame
+                ctx.strokeStyle = "#555";
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(wx, wy, winW, winH);
+            }
+        }
+    }
+
+    // ENHANCED FIRE AND DAMAGE ZONE
+    ctx.save();
+    
+    // Large fire glow with pulsing effect
+    const pulseIntensity = Math.sin(frameCount * 0.08) * 0.15 + 0.85;
+    const fireGrad = ctx.createRadialGradient(x + w/2, damageZone, 10, x + w/2, damageZone, 60);
+    fireGrad.addColorStop(0, `rgba(255,200,50,${0.6 * pulseIntensity})`);
+    fireGrad.addColorStop(0.3, `rgba(255,120,0,${0.45 * pulseIntensity})`);
+    fireGrad.addColorStop(0.6, `rgba(220,60,0,${0.25 * pulseIntensity})`);
+    fireGrad.addColorStop(1, "rgba(100,20,0,0)");
+    ctx.fillStyle = fireGrad;
+    ctx.fillRect(x - 20, damageZone - 50, w + 40, 100);
+
+    // Animated flames bursting out
+    for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        const flameOffset = Math.sin(frameCount * 0.15 + i) * 8;
+        const fx = x + w/2 + Math.cos(angle) * (25 + flameOffset);
+        const fy = damageZone + Math.sin(angle) * (20 + flameOffset);
+        const flameSize = 15 + Math.sin(frameCount * 0.12 + i * 0.5) * 5;
+        
+        // Outer flame (orange)
+        const flameGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, flameSize);
+        flameGrad.addColorStop(0, "rgba(255,220,100,0.8)");
+        flameGrad.addColorStop(0.4, "rgba(255,140,0,0.6)");
+        flameGrad.addColorStop(1, "rgba(255,60,0,0)");
+        ctx.fillStyle = flameGrad;
+        ctx.beginPath();
+        ctx.arc(fx, fy, flameSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner bright core
+        ctx.fillStyle = "rgba(255,255,200,0.4)";
+        ctx.beginPath();
+        ctx.arc(fx, fy, flameSize * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Realistic billowing smoke
+    for (let i = 0; i < 8; i++) {
+        const smokeOffset = Math.sin(frameCount * 0.05 + i * 0.8) * 12;
+        const sx = x + w/2 + (i - 4) * 8 + smokeOffset;
+        const sy = damageZone - 30 - i * 18 - (frameCount % 100) * 0.5;
+        const smokeSize = 18 + i * 5;
+        const smokeAlpha = Math.max(0, 0.35 - i * 0.04);
+        
+        // Dark smoke with gradient
+        const smokeGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, smokeSize);
+        smokeGrad.addColorStop(0, `rgba(40,40,40,${smokeAlpha})`);
+        smokeGrad.addColorStop(0.5, `rgba(60,60,60,${smokeAlpha * 0.7})`);
+        smokeGrad.addColorStop(1, `rgba(80,80,80,0)`);
+        ctx.fillStyle = smokeGrad;
+        ctx.beginPath();
+        ctx.arc(sx, sy, smokeSize, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Structural damage - exposed steel beams with heat distortion
+    ctx.strokeStyle = "#6a4a2a";
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 4; i++) {
+        const bx = x + 10 + i * (w - 20) / 3;
+        const beamWarp = Math.sin(frameCount * 0.1 + i) * 3;
+        ctx.beginPath();
+        ctx.moveTo(bx, damageZone - 40);
+        ctx.lineTo(bx + beamWarp, damageZone);
+        ctx.lineTo(bx - beamWarp, damageZone + 40);
+        ctx.stroke();
+        
+        // Glowing hot metal
+        ctx.strokeStyle = `rgba(255,100,0,${0.3 + Math.sin(frameCount * 0.1 + i) * 0.2})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = "#6a4a2a";
+        ctx.lineWidth = 4;
+    }
+
+    // Falling debris with trails
+    ctx.fillStyle = "#5a5a5a";
+    for (let i = 0; i < 8; i++) {
+        const debrisPhase = (frameCount * 2 + i * 30) % 200;
+        const dx = x + (i * w / 8) + Math.sin(debrisPhase * 0.1) * 10;
+        const dy = damageZone + 30 + debrisPhase;
+        const debrisSize = 2 + (i % 3);
+        
+        if (dy < y + h) {
+            // Debris piece
+            ctx.fillStyle = "#4a4a4a";
+            ctx.fillRect(dx, dy, debrisSize, debrisSize * 2);
+            
+            // Smoke trail
+            ctx.fillStyle = `rgba(80,80,80,${0.3 - debrisPhase / 600})`;
+            ctx.fillRect(dx, dy - 10, debrisSize, 10);
+        }
+    }
+
+    // Heat waves/distortion effect
+    ctx.globalAlpha = 0.15;
+    for (let i = 0; i < 3; i++) {
+        const waveY = damageZone + Math.sin(frameCount * 0.1 + i) * 15;
+        const waveGrad = ctx.createLinearGradient(x, waveY - 10, x, waveY + 10);
+        waveGrad.addColorStop(0, "rgba(255,150,0,0)");
+        waveGrad.addColorStop(0.5, "rgba(255,150,0,0.3)");
+        waveGrad.addColorStop(1, "rgba(255,150,0,0)");
+        ctx.fillStyle = waveGrad;
+        ctx.fillRect(x - 10, waveY - 10, w + 20, 20);
+    }
+    ctx.globalAlpha = 1.0;
+
+    ctx.restore();
+
+    // Roof structure on bottom tower
+    if (!fromTop) {
+        const roofHeight = 35;
+        const roofOverhang = 8;
+        
+        // Roof base/parapet
+        ctx.fillStyle = "#6a6a6a";
+        ctx.fillRect(x - 4, y - 8, w + 8, 8);
+        
+        // Main roof structure (sloped)
+        const roofGrad = ctx.createLinearGradient(x, y - roofHeight, x + w, y - roofHeight);
+        roofGrad.addColorStop(0, "#4a4a4a");
+        roofGrad.addColorStop(0.5, "#5a5a5a");
+        roofGrad.addColorStop(1, "#3a3a3a");
+        ctx.fillStyle = roofGrad;
+        
+        // Draw peaked roof
+        ctx.beginPath();
+        ctx.moveTo(x - roofOverhang, y);
+        ctx.lineTo(x + w / 2, y - roofHeight);
+        ctx.lineTo(x + w + roofOverhang, y);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Roof edge highlight
+        ctx.strokeStyle = "#7a7a7a";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - roofOverhang, y);
+        ctx.lineTo(x + w / 2, y - roofHeight);
+        ctx.lineTo(x + w + roofOverhang, y);
+        ctx.stroke();
+        
+        // Roof panels/shingles
+        ctx.strokeStyle = "rgba(0,0,0,0.2)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+            const roofY = y - (roofHeight / 4) * i;
+            const roofSpan = (w + roofOverhang * 2) * (1 - i / 4);
+            ctx.beginPath();
+            ctx.moveTo(x + w / 2 - roofSpan / 2, roofY);
+            ctx.lineTo(x + w / 2 + roofSpan / 2, roofY);
+            ctx.stroke();
+        }
+        
+        // Antenna/spire on top (damaged and tilted)
+        const antennaTilt = Math.sin(frameCount * 0.05) * 2;
+        ctx.strokeStyle = "#6a6a6a";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x + w / 2, y - roofHeight);
+        ctx.lineTo(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25);
+        ctx.stroke();
+        
+        // Antenna light (blinking)
+        if (frameCount % 60 < 30) {
+            ctx.fillStyle = "rgba(255,0,0,0.8)";
+            ctx.beginPath();
+            ctx.arc(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25, 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Light glow
+            ctx.fillStyle = "rgba(255,0,0,0.3)";
+            ctx.beginPath();
+            ctx.arc(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25, 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+function drawEpsteinCoin(coin) {
+    const cx = coin.x, cy = coin.y, r = coin.r;
+    const dy = cy;
+
+    ctx.save();
+
+    // Draw the photo clipped into a circle
+    if (coinImg.complete && coinImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, dy, r, 0, Math.PI * 2);
+        ctx.clip();
+        // Draw image centered and covering the coin circle
+        const imgSize = r * 2;
+        ctx.drawImage(coinImg, cx - r, dy - r, imgSize, imgSize);
+        ctx.restore();
+    }
+
+    // Subtle border around the circular image
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, dy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+function drawPipe(pipe) {
+    // Top Tower
+    drawDamagedTower(pipe.x, 0, pipe.topHeight, true);
+    
+    // Bottom Tower
+    const bottomY = pipe.topHeight + PIPE_GAP;
+    drawDamagedTower(pipe.x, bottomY, canvas.height - bottomY, false);
+}
+
+function animate() {
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "40px Arial";
+        ctx.fillText("GAME OVER", canvas.width/2 - 110, canvas.height/2);
+        ctx.font = "20px Arial";
+        ctx.fillText("Click to Restart", canvas.width/2 - 70, canvas.height/2 + 40);
+        return;
+    }
+
+    // Sky gradient background
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    skyGrad.addColorStop(0, "#87CEEB");
+    skyGrad.addColorStop(0.6, "#b8e4f9");
+    skyGrad.addColorStop(1, "#e8d5b7");
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Clouds (optimized with cached positions)
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    const cloudOffset = frameCount * 0.5;
+    for (let i = 0; i < cloudPositions.length; i++) {
+        const cloud = cloudPositions[i];
+        const cx = ((cloud.offsetX - cloudOffset) % (canvas.width + 200)) + 100;
+        ctx.beginPath();
+        ctx.arc(cx, cloud.y, 25, 0, Math.PI * 2);
+        ctx.arc(cx + 25, cloud.y - 10, 20, 0, Math.PI * 2);
+        ctx.arc(cx + 50, cloud.y, 28, 0, Math.PI * 2);
+        ctx.arc(cx + 25, cloud.y + 5, 22, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Physics
+    plane.velocity += GRAVITY;
+    plane.y += plane.velocity;
+
+    // Draw Plane
+    drawPlane(plane.x, plane.y);
+
+    // Handle Pipes & Coins
+    if (frameCount % SPAWN_RATE === 0) {
+        let topH = Math.random() * (canvas.height - PIPE_GAP - 100) + 50;
+        pipes.push({ x: canvas.width, topHeight: topH, passed: false });
+        
+        // Spawn coin: 50% between towers, 50% after towers
+        const spawnBetween = Math.random() > 0.5;
+        let coinX, coinY;
+        
+        if (spawnBetween) {
+            // Between towers
+            coinX = canvas.width + PIPE_WIDTH / 2;
+            const coinMargin = 60;
+            coinY = topH + coinMargin + Math.random() * (PIPE_GAP - coinMargin * 2);
+        } else {
+            // After towers (in open space)
+            coinX = canvas.width + PIPE_WIDTH + 80 + Math.random() * 100;
+            coinY = 100 + Math.random() * (canvas.height - 200);
+        }
+        
+        coins.push({
+            x: coinX,
+            y: coinY,
+            r: 28,
+            collected: false
+        });
+    }
+
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        pipes[i].x -= PIPE_SPEED;
+        drawPipe(pipes[i]);
+
+        // Collision Detection
+        if (
+            plane.x + plane.w > pipes[i].x && 
+            plane.x < pipes[i].x + PIPE_WIDTH &&
+            (plane.y < pipes[i].topHeight || plane.y + plane.h > pipes[i].topHeight + PIPE_GAP)
+        ) {
+            gameOver = true;
+        }
+
+        // Score Tracking
+        if (!pipes[i].passed && pipes[i].x < plane.x) {
+            pipes[i].passed = true;
+            score++;
+            updateScore();
+        }
+
+        if (pipes[i].x + PIPE_WIDTH < 0) pipes.splice(i, 1);
+    }
+
+    // Handle Coins
+    for (let i = coins.length - 1; i >= 0; i--) {
+        coins[i].x -= PIPE_SPEED;
+        if (!coins[i].collected) {
+            drawEpsteinCoin(coins[i]);
+            // Coin collection (circle vs rectangle collision)
+            const coinCx = coins[i].x;
+            const coinCy = coins[i].y;
+            const coinR = coins[i].r;
+            const planeRight = plane.x + plane.w;
+            const planeBottom = plane.y + plane.h;
+            // Find closest point on plane rect to coin center
+            const closestX = Math.max(plane.x, Math.min(coinCx, planeRight));
+            const closestY = Math.max(plane.y, Math.min(coinCy, planeBottom));
+            const dx = coinCx - closestX;
+            const dy = coinCy - closestY;
+            if (dx * dx + dy * dy < coinR * coinR) {
+                coins[i].collected = true;
+                solBought += 0.01;
+                totalSolBought += 0.01;
+                localStorage.setItem('totalSolBought', totalSolBought.toFixed(2));
+                updateScore();
+                triggerBuy(coinCx, coinCy);
+            }
+        }
+        if (coins[i].x + coins[i].r < 0) coins.splice(i, 1);
+    }
+
+    // Boundary Check
+    if (plane.y + plane.h > canvas.height || plane.y < 0) {
+        gameOver = true;
+    }
+
+    // Draw buy notifications on top of everything
+    drawBuyNotifications();
+
+    frameCount++;
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

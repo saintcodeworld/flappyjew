@@ -1,0 +1,20 @@
+{
+  "name": "aero-flap-pumpfun",
+  "version": "1.0.0",
+  "description": "Aero Flap Game with Pump.fun auto-buy integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@pump-fun/pump-sdk": "^1.29.0",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0",
+    "bs58": "^5.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  }
+}
