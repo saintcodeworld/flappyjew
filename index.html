@@ -8,7 +8,7 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; width: 100vw; height: 100vh; }
         canvas { display: block; background: #fff; }
-        #ui { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: bold; color: #333; pointer-events: none; }
+        #ui { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: bold; color: #000; pointer-events: none; }
         #buy-log { position: absolute; bottom: 10px; right: 10px; width: 320px; max-height: 180px; overflow-y: auto; font-size: 12px; color: #0f0; background: rgba(0,0,0,0.7); border: 1px solid #0f03; border-radius: 8px; padding: 8px; pointer-events: none; font-family: 'Courier New', monospace; }
         #buy-log .entry { padding: 2px 0; border-bottom: 1px solid rgba(0,255,0,0.1); }
         #buy-log .fail { color: #f55; }
@@ -49,7 +49,7 @@ let lastTime = 0;
 let spawnAccumulator = 0;
 
 // Game State
-let plane = { x: 80, y: window.innerHeight / 2, w: 200, h: 62, velocity: 0 };
+let plane = { x: 280, y: window.innerHeight / 2, w: 200, h: 62, velocity: 0 };
 let pipes = [];
 let coins = [];
 let frameCount = 0;
@@ -201,7 +201,7 @@ function flap() {
 }
 
 function resetGame() {
-    plane = { x: 80, y: canvas.height / 2, w: 200, h: 62, velocity: 0 };
+    plane = { x: 280, y: canvas.height / 2, w: 200, h: 62, velocity: 0 };
     pipes = [];
     coins = [];
     score = 0;
@@ -901,7 +901,7 @@ function animate(timestamp) {
         drawPlane(plane.x, plane.y);
 
         // Title
-        ctx.fillStyle = "#0038b8";
+        ctx.fillStyle = "#000";
         ctx.font = "bold 50px 'Courier New', monospace";
         ctx.textAlign = "center";
         ctx.fillText("✡️ Flappy Jew", canvas.width / 2, canvas.height / 2 - 80);
@@ -919,15 +919,15 @@ function animate(timestamp) {
         ctx.fillText("▶  PLAY", canvas.width / 2, btnY + 40);
 
         // Stats display
-        ctx.fillStyle = "#fff";
+        ctx.fillStyle = "#000";
         ctx.font = "bold 18px 'Courier New', monospace";
         ctx.fillText("💰 Total SOL Bought: " + totalSolBought.toFixed(4) + " SOL", canvas.width / 2, btnY + btnH + 30);
         ctx.font = "14px 'Courier New', monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillText("Each coin = " + buyAmountSol + " SOL dev buy", canvas.width / 2, btnY + btnH + 55);
 
         // Subtitle
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillStyle = "#000";
         ctx.font = "16px 'Courier New', monospace";
         ctx.fillText("Click or press Space to start", canvas.width / 2, btnY + btnH + 85);
         ctx.textAlign = "left";
@@ -939,7 +939,7 @@ function animate(timestamp) {
     if (gameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
+        ctx.fillStyle = "#000";
         ctx.font = "40px Arial";
         ctx.fillText("GAME OVER", canvas.width/2 - 110, canvas.height/2);
         ctx.font = "20px Arial";
