@@ -18,7 +18,7 @@
       "use": "@vercel/static"
     },
     {
-      "src": "jewish song.mp3",
+      "src": "jewish-song.mp3",
       "use": "@vercel/static"
     }
   ],
@@ -36,8 +36,8 @@
       "dest": "images.jpeg"
     },
     {
-      "src": "/jewish song.mp3",
-      "dest": "jewish song.mp3"
+      "src": "/jewish-song.mp3",
+      "dest": "jewish-song.mp3"
     },
     {
       "src": "/(.*)",
