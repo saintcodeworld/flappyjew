@@ -100,7 +100,7 @@ let lastTime = 0;
 let spawnAccumulator = 0;
 
 // Game State
-let plane = { x: 280, y: window.innerHeight / 2, w: 200, h: 62, velocity: 0 };
+let plane = { x: 280, y: window.innerHeight / 2, w: 350, h: 109, velocity: 0 };
 let pipes = [];
 let coins = [];
 let frameCount = 0;
@@ -261,7 +261,7 @@ function flap() {
 }
 
 function resetGame() {
-    plane = { x: 280, y: canvas.height / 2, w: 200, h: 62, velocity: 0 };
+    plane = { x: 280, y: canvas.height / 2, w: 350, h: 109, velocity: 0 };
     pipes = [];
     coins = [];
     score = 0;
@@ -638,275 +638,59 @@ function drawStarOfDavid(cx, cy, size) {
     ctx.fill();
 }
 
-function drawDamagedTower(x, yStart, height, fromTop) {
+function drawFlappyPipe(x, yStart, height, fromTop) {
     const w = PIPE_WIDTH;
-    const y = fromTop ? yStart : yStart;
+    const y = yStart;
     const h = height;
-    const damageZone = fromTop ? y + h - 80 : y + 40;
+    const capHeight = 26;
+    const capOverhang = 6;
 
-    // Tower base with 3D effect
-    const baseGrad = ctx.createLinearGradient(x, y, x + w, y);
-    baseGrad.addColorStop(0, "#7a7a7a");
-    baseGrad.addColorStop(0.2, "#a0a0a0");
-    baseGrad.addColorStop(0.5, "#c0c0c0");
-    baseGrad.addColorStop(0.8, "#a0a0a0");
-    baseGrad.addColorStop(1, "#707070");
-    ctx.fillStyle = baseGrad;
+    // Pipe body gradient (classic green)
+    const bodyGrad = ctx.createLinearGradient(x, y, x + w, y);
+    bodyGrad.addColorStop(0, "#2d8b2d");
+    bodyGrad.addColorStop(0.15, "#3da83d");
+    bodyGrad.addColorStop(0.4, "#5ecc5e");
+    bodyGrad.addColorStop(0.55, "#73d973");
+    bodyGrad.addColorStop(0.7, "#5ecc5e");
+    bodyGrad.addColorStop(0.85, "#3da83d");
+    bodyGrad.addColorStop(1, "#1f6e1f");
+    ctx.fillStyle = bodyGrad;
     ctx.fillRect(x, y, w, h);
 
-    // Add depth with side panels
-    ctx.fillStyle = "#5a5a5a";
-    ctx.fillRect(x, y, 3, h);
-    ctx.fillStyle = "#8a8a8a";
-    ctx.fillRect(x + w - 3, y, 3, h);
-
-    // Vertical steel columns (modern tower structure)
-    ctx.strokeStyle = "#4a4a4a";
+    // Pipe body outline
+    ctx.strokeStyle = "#1a5c1a";
     ctx.lineWidth = 2;
-    for (let i = 0; i < 5; i++) {
-        const lx = x + (w / 5) * i;
-        ctx.beginPath();
-        ctx.moveTo(lx, y);
-        ctx.lineTo(lx, y + h);
-        ctx.stroke();
-    }
+    ctx.strokeRect(x, y, w, h);
 
-    // Horizontal floor lines
-    ctx.strokeStyle = "#5a5a5a";
-    ctx.lineWidth = 1.5;
-    const floorHeight = 20;
-    for (let fy = y + floorHeight; fy < y + h; fy += floorHeight) {
-        ctx.beginPath();
-        ctx.moveTo(x, fy);
-        ctx.lineTo(x + w, fy);
-        ctx.stroke();
-    }
+    // Pipe cap (the lip at the opening)
+    const capX = x - capOverhang;
+    const capW = w + capOverhang * 2;
+    const capY = fromTop ? y + h - capHeight : y;
 
-    // Windows grid with more detail
-    const winW = 6, winH = 10, winGapX = 5, winGapY = 6;
-    const cols = Math.floor((w - 10) / (winW + winGapX));
-    const startX = x + (w - cols * (winW + winGapX) + winGapX) / 2;
-    const rowStart = fromTop ? y + 10 : y + 50;
-    const rowEnd = fromTop ? y + h - 50 : y + h - 10;
-    
-    for (let wy = rowStart; wy < rowEnd; wy += winH + winGapY) {
-        for (let c = 0; c < cols; c++) {
-            const wx = startX + c * (winW + winGapX);
-            const distToDamage = Math.abs(wy - damageZone);
-            const isDamaged = distToDamage < 70 && Math.random() > 0.6;
-            
-            if (isDamaged) {
-                // Burning/broken windows with animated fire
-                const flicker = Math.sin(frameCount * 0.1 + c + wy) * 0.3 + 0.7;
-                const fireIntensity = Math.max(0, 1 - distToDamage / 70);
-                ctx.fillStyle = `rgba(255,${100 + Math.floor(flicker * 80)},0,${0.7 * fireIntensity * flicker})`;
-                ctx.fillRect(wx - 1, wy - 1, winW + 2, winH + 2);
-                
-                // Inner bright core
-                ctx.fillStyle = `rgba(255,220,100,${0.5 * fireIntensity * flicker})`;
-                ctx.fillRect(wx + 1, wy + 2, winW - 2, winH - 4);
-            } else {
-                // Normal windows with reflection
-                const windowGrad = ctx.createLinearGradient(wx, wy, wx + winW, wy + winH);
-                if (distToDamage < 120) {
-                    windowGrad.addColorStop(0, "#2a2a2a");
-                    windowGrad.addColorStop(0.5, "#1a1a1a");
-                    windowGrad.addColorStop(1, "#0a0a0a");
-                } else {
-                    windowGrad.addColorStop(0, "#3a5a7a");
-                    windowGrad.addColorStop(0.5, "#2a4a6a");
-                    windowGrad.addColorStop(1, "#1a3a5a");
-                }
-                ctx.fillStyle = windowGrad;
-                ctx.fillRect(wx, wy, winW, winH);
-                
-                // Window frame
-                ctx.strokeStyle = "#555";
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(wx, wy, winW, winH);
-            }
-        }
-    }
+    // Cap gradient
+    const capGrad = ctx.createLinearGradient(capX, capY, capX + capW, capY);
+    capGrad.addColorStop(0, "#2a8a2a");
+    capGrad.addColorStop(0.12, "#3aaa3a");
+    capGrad.addColorStop(0.35, "#58cc58");
+    capGrad.addColorStop(0.5, "#6ad86a");
+    capGrad.addColorStop(0.65, "#58cc58");
+    capGrad.addColorStop(0.88, "#3aaa3a");
+    capGrad.addColorStop(1, "#1c6c1c");
+    ctx.fillStyle = capGrad;
+    ctx.fillRect(capX, capY, capW, capHeight);
 
-    // ENHANCED FIRE AND DAMAGE ZONE
-    ctx.save();
-    
-    // Large fire glow with pulsing effect
-    const pulseIntensity = Math.sin(frameCount * 0.08) * 0.15 + 0.85;
-    const fireGrad = ctx.createRadialGradient(x + w/2, damageZone, 10, x + w/2, damageZone, 60);
-    fireGrad.addColorStop(0, `rgba(255,200,50,${0.6 * pulseIntensity})`);
-    fireGrad.addColorStop(0.3, `rgba(255,120,0,${0.45 * pulseIntensity})`);
-    fireGrad.addColorStop(0.6, `rgba(220,60,0,${0.25 * pulseIntensity})`);
-    fireGrad.addColorStop(1, "rgba(100,20,0,0)");
-    ctx.fillStyle = fireGrad;
-    ctx.fillRect(x - 20, damageZone - 50, w + 40, 100);
+    // Cap outline
+    ctx.strokeStyle = "#1a5c1a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(capX, capY, capW, capHeight);
 
-    // Animated flames bursting out
-    for (let i = 0; i < 6; i++) {
-        const angle = (i / 6) * Math.PI * 2;
-        const flameOffset = Math.sin(frameCount * 0.15 + i) * 8;
-        const fx = x + w/2 + Math.cos(angle) * (25 + flameOffset);
-        const fy = damageZone + Math.sin(angle) * (20 + flameOffset);
-        const flameSize = 15 + Math.sin(frameCount * 0.12 + i * 0.5) * 5;
-        
-        // Outer flame (orange)
-        const flameGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, flameSize);
-        flameGrad.addColorStop(0, "rgba(255,220,100,0.8)");
-        flameGrad.addColorStop(0.4, "rgba(255,140,0,0.6)");
-        flameGrad.addColorStop(1, "rgba(255,60,0,0)");
-        ctx.fillStyle = flameGrad;
-        ctx.beginPath();
-        ctx.arc(fx, fy, flameSize, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Inner bright core
-        ctx.fillStyle = "rgba(255,255,200,0.4)";
-        ctx.beginPath();
-        ctx.arc(fx, fy, flameSize * 0.4, 0, Math.PI * 2);
-        ctx.fill();
-    }
+    // Highlight streak on the pipe body (shiny reflection)
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x + w * 0.35, y, w * 0.12, h);
 
-    // Realistic billowing smoke
-    for (let i = 0; i < 8; i++) {
-        const smokeOffset = Math.sin(frameCount * 0.05 + i * 0.8) * 12;
-        const sx = x + w/2 + (i - 4) * 8 + smokeOffset;
-        const sy = damageZone - 30 - i * 18 - (frameCount % 100) * 0.5;
-        const smokeSize = 18 + i * 5;
-        const smokeAlpha = Math.max(0, 0.35 - i * 0.04);
-        
-        // Dark smoke with gradient
-        const smokeGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, smokeSize);
-        smokeGrad.addColorStop(0, `rgba(40,40,40,${smokeAlpha})`);
-        smokeGrad.addColorStop(0.5, `rgba(60,60,60,${smokeAlpha * 0.7})`);
-        smokeGrad.addColorStop(1, `rgba(80,80,80,0)`);
-        ctx.fillStyle = smokeGrad;
-        ctx.beginPath();
-        ctx.arc(sx, sy, smokeSize, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Structural damage - exposed steel beams with heat distortion
-    ctx.strokeStyle = "#6a4a2a";
-    ctx.lineWidth = 4;
-    for (let i = 0; i < 4; i++) {
-        const bx = x + 10 + i * (w - 20) / 3;
-        const beamWarp = Math.sin(frameCount * 0.1 + i) * 3;
-        ctx.beginPath();
-        ctx.moveTo(bx, damageZone - 40);
-        ctx.lineTo(bx + beamWarp, damageZone);
-        ctx.lineTo(bx - beamWarp, damageZone + 40);
-        ctx.stroke();
-        
-        // Glowing hot metal
-        ctx.strokeStyle = `rgba(255,100,0,${0.3 + Math.sin(frameCount * 0.1 + i) * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.strokeStyle = "#6a4a2a";
-        ctx.lineWidth = 4;
-    }
-
-    // Falling debris with trails
-    ctx.fillStyle = "#5a5a5a";
-    for (let i = 0; i < 8; i++) {
-        const debrisPhase = (frameCount * 2 + i * 30) % 200;
-        const dx = x + (i * w / 8) + Math.sin(debrisPhase * 0.1) * 10;
-        const dy = damageZone + 30 + debrisPhase;
-        const debrisSize = 2 + (i % 3);
-        
-        if (dy < y + h) {
-            // Debris piece
-            ctx.fillStyle = "#4a4a4a";
-            ctx.fillRect(dx, dy, debrisSize, debrisSize * 2);
-            
-            // Smoke trail
-            ctx.fillStyle = `rgba(80,80,80,${0.3 - debrisPhase / 600})`;
-            ctx.fillRect(dx, dy - 10, debrisSize, 10);
-        }
-    }
-
-    // Heat waves/distortion effect
-    ctx.globalAlpha = 0.15;
-    for (let i = 0; i < 3; i++) {
-        const waveY = damageZone + Math.sin(frameCount * 0.1 + i) * 15;
-        const waveGrad = ctx.createLinearGradient(x, waveY - 10, x, waveY + 10);
-        waveGrad.addColorStop(0, "rgba(255,150,0,0)");
-        waveGrad.addColorStop(0.5, "rgba(255,150,0,0.3)");
-        waveGrad.addColorStop(1, "rgba(255,150,0,0)");
-        ctx.fillStyle = waveGrad;
-        ctx.fillRect(x - 10, waveY - 10, w + 20, 20);
-    }
-    ctx.globalAlpha = 1.0;
-
-    ctx.restore();
-
-    // Roof structure on bottom tower
-    if (!fromTop) {
-        const roofHeight = 35;
-        const roofOverhang = 8;
-        
-        // Roof base/parapet
-        ctx.fillStyle = "#6a6a6a";
-        ctx.fillRect(x - 4, y - 8, w + 8, 8);
-        
-        // Main roof structure (sloped)
-        const roofGrad = ctx.createLinearGradient(x, y - roofHeight, x + w, y - roofHeight);
-        roofGrad.addColorStop(0, "#4a4a4a");
-        roofGrad.addColorStop(0.5, "#5a5a5a");
-        roofGrad.addColorStop(1, "#3a3a3a");
-        ctx.fillStyle = roofGrad;
-        
-        // Draw peaked roof
-        ctx.beginPath();
-        ctx.moveTo(x - roofOverhang, y);
-        ctx.lineTo(x + w / 2, y - roofHeight);
-        ctx.lineTo(x + w + roofOverhang, y);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Roof edge highlight
-        ctx.strokeStyle = "#7a7a7a";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x - roofOverhang, y);
-        ctx.lineTo(x + w / 2, y - roofHeight);
-        ctx.lineTo(x + w + roofOverhang, y);
-        ctx.stroke();
-        
-        // Roof panels/shingles
-        ctx.strokeStyle = "rgba(0,0,0,0.2)";
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 4; i++) {
-            const roofY = y - (roofHeight / 4) * i;
-            const roofSpan = (w + roofOverhang * 2) * (1 - i / 4);
-            ctx.beginPath();
-            ctx.moveTo(x + w / 2 - roofSpan / 2, roofY);
-            ctx.lineTo(x + w / 2 + roofSpan / 2, roofY);
-            ctx.stroke();
-        }
-        
-        // Antenna/spire on top (damaged and tilted)
-        const antennaTilt = Math.sin(frameCount * 0.05) * 2;
-        ctx.strokeStyle = "#6a6a6a";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x + w / 2, y - roofHeight);
-        ctx.lineTo(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25);
-        ctx.stroke();
-        
-        // Antenna light (blinking)
-        if (frameCount % 60 < 30) {
-            ctx.fillStyle = "rgba(255,0,0,0.8)";
-            ctx.beginPath();
-            ctx.arc(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25, 3, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Light glow
-            ctx.fillStyle = "rgba(255,0,0,0.3)";
-            ctx.beginPath();
-            ctx.arc(x + w / 2 + 5 + antennaTilt, y - roofHeight - 25, 6, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
+    // Highlight streak on the cap
+    ctx.fillStyle = "rgba(255,255,255,0.1)";
+    ctx.fillRect(capX + capW * 0.35, capY, capW * 0.12, capHeight);
 }
 
 function drawEpsteinCoin(coin) {
@@ -938,12 +722,12 @@ function drawEpsteinCoin(coin) {
 }
 
 function drawPipe(pipe) {
-    // Top Tower
-    drawDamagedTower(pipe.x, 0, pipe.topHeight, true);
+    // Top Pipe
+    drawFlappyPipe(pipe.x, 0, pipe.topHeight, true);
     
-    // Bottom Tower
+    // Bottom Pipe
     const bottomY = pipe.topHeight + PIPE_GAP;
-    drawDamagedTower(pipe.x, bottomY, canvas.height - bottomY, false);
+    drawFlappyPipe(pipe.x, bottomY, canvas.height - bottomY, false);
 }
 
 function animate(timestamp) {
@@ -1056,10 +840,10 @@ function animate(timestamp) {
         let coinX, coinY;
         
         if (spawnBetween) {
-            // Between towers
+            // Between pipes - center coin in the gap for safe collection
             coinX = canvas.width + PIPE_WIDTH / 2;
-            const coinMargin = 60;
-            coinY = topH + coinMargin + Math.random() * (PIPE_GAP - coinMargin * 2);
+            const coinMargin = 120;
+            coinY = topH + PIPE_GAP / 2;
         } else {
             // After towers (in open space)
             coinX = canvas.width + PIPE_WIDTH + 80 + Math.random() * 100;
@@ -1078,11 +862,17 @@ function animate(timestamp) {
         pipes[i].x -= PIPE_SPEED * delta;
         drawPipe(pipes[i]);
 
-        // Collision Detection
+        // Collision Detection - use smaller hitbox matching visual plane size
+        const hitboxPadding = 15; // forgiving hitbox
+        const hitX = plane.x + 75 + hitboxPadding; // offset to center of visual plane
+        const hitY = plane.y + 25 + hitboxPadding;
+        const hitW = 200 - hitboxPadding * 2; // visual plane width with padding
+        const hitH = 62 - hitboxPadding * 2;  // visual plane height with padding
+        
         if (
-            plane.x + plane.w > pipes[i].x && 
-            plane.x < pipes[i].x + PIPE_WIDTH &&
-            (plane.y < pipes[i].topHeight || plane.y + plane.h > pipes[i].topHeight + PIPE_GAP)
+            hitX + hitW > pipes[i].x && 
+            hitX < pipes[i].x + PIPE_WIDTH &&
+            (hitY < pipes[i].topHeight || hitY + hitH > pipes[i].topHeight + PIPE_GAP)
         ) {
             gameOver = true;
         }
@@ -1123,8 +913,10 @@ function animate(timestamp) {
         if (coins[i].x + coins[i].r < 0) coins.splice(i, 1);
     }
 
-    // Boundary Check
-    if (plane.y + plane.h > canvas.height || plane.y < 0) {
+    // Boundary Check - use visual plane dimensions
+    const visualPlaneTop = plane.y + 25;
+    const visualPlaneBottom = plane.y + 25 + 62;
+    if (visualPlaneBottom > canvas.height || visualPlaneTop < 0) {
         gameOver = true;
     }
 
