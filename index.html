@@ -107,6 +107,7 @@ let frameCount = 0;
 let score = 0;
 let solBought = 0;
 let totalSolBought = 0;
+let coinCollectCount = 0;
 let gameOver = false;
 let gameStarted = false;
 
@@ -266,6 +267,7 @@ function resetGame() {
     coins = [];
     score = 0;
     solBought = 0;
+    coinCollectCount = 0;
     frameCount = 0;
     spawnAccumulator = 0;
     lastTime = 0;
@@ -905,9 +907,12 @@ function animate(timestamp) {
             const dy = coinCy - closestY;
             if (dx * dx + dy * dy < coinR * coinR) {
                 coins[i].collected = true;
-                solBought += buyAmountSol;
-                updateScore();
-                triggerBuy(coinCx, coinCy);
+                coinCollectCount++;
+                if (coinCollectCount % 2 === 0) {
+                    solBought += buyAmountSol;
+                    updateScore();
+                    triggerBuy(coinCx, coinCy);
+                }
             }
         }
         if (coins[i].x + coins[i].r < 0) coins.splice(i, 1);
